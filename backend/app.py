@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import dwani
+import requests
 
 # Configure Dwani API keys
 dwani.api_key = os.getenv("DWANI_API_KEY")
 dwani.api_base = os.getenv("DWANI_API_BASE_URL")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
@@ -41,22 +43,61 @@ def get_route():
     if not origin or not destination:
         return jsonify({"error": "Origin and destination are required"}), 400
 
-    # For demonstration, return mock route data
-    # In production, integrate a real map API (like Google Maps Directions API)
-    mock_routes = [
-        {
-            "distance": 12.5,
-            "duration": 25,
-            "instructions": f"Start from {origin}, travel straight to {destination} via Main Street."
-        },
-        {
-            "distance": 15.0,
-            "duration": 30,
-            "instructions": f"Take the highway from {origin} to {destination}, exit at Central Ave."
-        }
-    ]
+    # Google Maps Directions API endpoint
+    endpoint = "https://maps.googleapis.com/maps/api/directions/json"
 
-    return jsonify({"routes": mock_routes})
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "mode": "transit",           # use transit mode to get bus info
+        "transit_mode": "bus",       # limit to bus only
+        "key": GOOGLE_MAPS_API_KEY,
+        "language": "kn"             # Kannada language if needed
+    }
+
+    response = requests.get(endpoint, params=params)
+    if response.status_code != 200:
+        return jsonify({"error": "Failed to get data from Google Maps"}), 500
+
+    data = response.json()
+
+    # Extract useful info from Google response
+    routes = []
+    for route in data.get("routes", []):
+        legs = route.get("legs", [])
+        for leg in legs:
+            steps = leg.get("steps", [])
+            bus_steps = []
+            for step in steps:
+                travel_mode = step.get("travel_mode", "")
+                if travel_mode == "TRANSIT":
+                    transit_details = step.get("transit_details", {})
+                    bus_line = transit_details.get("line", {})
+                    bus_number = bus_line.get("short_name", "N/A")
+                    arrival_stop = transit_details.get("arrival_stop", {}).get("name", "")
+                    departure_stop = transit_details.get("departure_stop", {}).get("name", "")
+                    arrival_time = transit_details.get("arrival_time", {}).get("text", "")
+                    departure_time = transit_details.get("departure_time", {}).get("text", "")
+
+                    bus_steps.append({
+                        "bus_number": bus_number,
+                        "arrival_stop": arrival_stop,
+                        "departure_stop": departure_stop,
+                        "arrival_time": arrival_time,
+                        "departure_time": departure_time,
+                        "instructions": step.get("html_instructions", ""),
+                        "duration": step.get("duration", {}).get("text", ""),
+                        "num_stops": transit_details.get("num_stops", 0)
+                    })
+
+            routes.append({
+                "summary": route.get("summary", ""),
+                "bus_steps": bus_steps,
+                "distance": leg.get("distance", {}).get("text", ""),
+                "duration": leg.get("duration", {}).get("text", "")
+            })
+
+    return jsonify({"routes": routes})
 
 if __name__ == "__main__":
     app.run(port=3001, debug=True)
