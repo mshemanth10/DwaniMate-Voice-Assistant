@@ -17,7 +17,7 @@ def api_chat():
     prompt = request.json.get("message", "")
     try:
         # Chat API: translate or respond in Kannada
-        response = dwani.Chat.create(prompt=prompt, src_lang="eng_Latn", tgt_lang="kan_Knda")
+        response = dwani.Chat.create(prompt=prompt+"if it is not related government services, transport routes, or schemes dont respond", src_lang="eng_Latn", tgt_lang="kan_Knda")
         reply_text = response.get("response", "No response")
 
         # Generate speech audio from the Kannada reply text
