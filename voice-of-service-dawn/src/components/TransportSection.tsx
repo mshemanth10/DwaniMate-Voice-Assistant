@@ -2,16 +2,15 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, Navigation, Bus, RefreshCw } from "lucide-react";
+import { MapPin, Navigation, Bus } from "lucide-react";
 
 const TransportSection = () => {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  // Convert location name to coordinates using Nominatim
+  // Function to convert place name to coordinates using Nominatim
   const geocodeLocation = async (location) => {
     if (!location) return null;
     try {
@@ -32,7 +31,6 @@ const TransportSection = () => {
     }
   };
 
-  // Use user's current location
   const handleUseLocation = () => {
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by your browser.");
@@ -50,11 +48,9 @@ const TransportSection = () => {
     );
   };
 
-  // Find routes between origin and destination
   const handleFindRoutes = async () => {
-    setError("");
     if (!origin || !destination) {
-      setError("Please provide both origin and destination.");
+      alert("Please provide both origin and destination.");
       return;
     }
 
@@ -62,14 +58,20 @@ const TransportSection = () => {
     setRoutes([]);
 
     try {
-      const isOriginCoords = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(origin);
-      const isDestinationCoords = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(destination);
+      // If origin or destination are not coordinates (latitude,longitude),
+      // convert them using geocoding API
+      const isOriginCoords = origin.match(
+        /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/
+      );
+      const isDestinationCoords = destination.match(
+        /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/
+      );
 
       const originCoords = isOriginCoords ? origin : await geocodeLocation(origin);
       const destinationCoords = isDestinationCoords ? destination : await geocodeLocation(destination);
 
       if (!originCoords || !destinationCoords) {
-        setError("Could not find coordinates for origin or destination.");
+        alert("Could not find coordinates for origin or destination.");
         setLoading(false);
         return;
       }
@@ -86,17 +88,10 @@ const TransportSection = () => {
       setRoutes(data.routes || []);
     } catch (err) {
       console.error(err);
-      setError("Failed to fetch route details.");
+      alert("Failed to fetch route details.");
     } finally {
       setLoading(false);
     }
-  };
-
-  // Swap origin and destination
-  const handleSwap = () => {
-    const temp = origin;
-    setOrigin(destination);
-    setDestination(temp);
   };
 
   return (
@@ -106,9 +101,7 @@ const TransportSection = () => {
           <h2 className="text-3xl font-bold text-gray-900 mb-4">
             ಸ್ಮಾರ್ಟ್ ಸಾರಿಗೆ ಮಾಹಿತಿ / Smart Transport Info
           </h2>
-          <p className="text-lg text-gray-600">
-            Find the best routes and timings for your journey
-          </p>
+          <p className="text-lg text-gray-600">Find the best routes and timings for your journey</p>
         </div>
 
         <div className="max-w-2xl mx-auto">
@@ -119,7 +112,6 @@ const TransportSection = () => {
                 <span>Plan Your Journey</span>
               </CardTitle>
             </CardHeader>
-
             <CardContent className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">From / ಇಂದ</label>
@@ -146,32 +138,10 @@ const TransportSection = () => {
                 />
               </div>
 
-              <div className="flex justify-between">
-                <Button
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  onClick={handleFindRoutes}
-                  disabled={loading}
-                >
-                  <Navigation className="w-4 h-4 mr-2" />
-                  {loading ? "Finding Routes..." : "Find Routes / ಮಾರ್ಗಗಳನ್ನು ಹುಡುಕಿ"}
-                </Button>
-
-                <Button
-                  className="ml-2"
-                  variant="ghost"
-                  onClick={handleSwap}
-                  disabled={loading}
-                >
-                  <RefreshCw className="w-4 h-4 mr-1" />
-                  Swap
-                </Button>
-              </div>
-
-              {error && (
-                <p className="text-sm text-red-600 mt-2" aria-live="polite">
-                  {error}
-                </p>
-              )}
+              <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleFindRoutes} disabled={loading}>
+                <Navigation className="w-4 h-4 mr-2" />
+                {loading ? "Finding Routes..." : "Find Routes / ಮಾರ್ಗಗಳನ್ನು ಹುಡುಕಿ"}
+              </Button>
 
               {/* Dynamic Route Results */}
               <div className="mt-6 space-y-3">
@@ -182,15 +152,7 @@ const TransportSection = () => {
                       <div key={idx} className="p-3 bg-blue-50 rounded-lg">
                         <p className="font-medium">Distance: {route.distance} km</p>
                         <p className="text-sm text-gray-600">Duration: {route.duration} mins</p>
-                        {route.instructions && (
-                          <p className="text-xs text-gray-500">{route.instructions}</p>
-                        )}
-                        {route.steps &&
-                          route.steps.map((step, i) => (
-                            <p key={i} className="text-xs text-gray-600">
-                              → {step}
-                            </p>
-                          ))}
+                        <p className="text-xs text-gray-500">{route.instructions}</p>
                       </div>
                     ))}
                   </>
