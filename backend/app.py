@@ -25,12 +25,9 @@ CORS(app)
 def api_chat():
     prompt = request.json.get("message", "")
     try:
-        response = dwani.Chat.create(
-            prompt=prompt + " (Only respond if it's about government services, education, transportation, or schemes. Reply in Kannada only.)",
-            src_lang="eng_Latn",
-            tgt_lang="kan_Knda"
-        )
-        reply_text = response.get("response", "ಯಾವುದೇ ಉತ್ತರ ಲಭ್ಯವಿಲ್ಲ.")
+        # Chat API: translate or respond in Kannada
+        response = dwani.Chat.create(prompt=prompt, src_lang="eng_Latn", tgt_lang="kan_Knda")
+        reply_text = response.get("response", "No response")
 
         audio_bytes = dwani.Audio.speech(input=reply_text, response_format="mp3")
         with open("output.mp3", "wb") as f:
