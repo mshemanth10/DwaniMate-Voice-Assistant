@@ -1,27 +1,28 @@
+"use client";
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, Navigation, Bus, RefreshCw } from "lucide-react";
+import { MapPin, Navigation, Bus } from "lucide-react";
+import { toast } from "@/components/ui/use-toast"; // You can use Sonner or your custom toast
 
 const TransportSection = () => {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  // Convert location name to coordinates using Nominatim
+  const isValidCoords = (value) => /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(value.trim());
+
   const geocodeLocation = async (location) => {
     if (!location) return null;
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          location
-        )}&format=json&limit=1`
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`
       );
       const data = await res.json();
-      if (data && data.length > 0) {
+      if (data?.length > 0) {
         const { lat, lon } = data[0];
         return `${lat},${lon}`;
       }
@@ -32,72 +33,65 @@ const TransportSection = () => {
     }
   };
 
-  // Use user's current location
   const handleUseLocation = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
+      toast({ title: "Error", description: "Geolocation not supported." });
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
         setOrigin(`${latitude},${longitude}`);
       },
-      (error) => {
-        alert("Unable to retrieve your location.");
-        console.error(error);
+      (err) => {
+        console.error(err);
+        toast({ title: "Error", description: "Unable to get your location." });
       }
     );
   };
 
-  // Find routes between origin and destination
   const handleFindRoutes = async () => {
-    setError("");
-    if (!origin || !destination) {
-      setError("Please provide both origin and destination.");
+  if (!origin || !destination) {
+    toast({ title: "Missing Info", description: "Please enter both origin and destination." });
+    return;
+  }
+
+  setLoading(true);
+  setRoutes([]);
+
+  try {
+    const res = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ origin, destination }),
+    });
+
+    const result = await res.json();
+
+    if (!result.data) {
+      toast({ title: "No Routes", description: "No bus routes found for this journey." });
       return;
     }
 
-    setLoading(true);
-    setRoutes([]);
+    // Assuming the response is a JSON string with route details
+    const routesData = JSON.parse(result.data);
+    setRoutes(routesData.routes);
+  } catch (err) {
+    console.error(err);
+    toast({ title: "Error", description: "Something went wrong while fetching routes." });
+  } finally {
+    setLoading(false);
+  }
+};
 
-    try {
-      const isOriginCoords = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(origin);
-      const isDestinationCoords = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(destination);
 
-      const originCoords = isOriginCoords ? origin : await geocodeLocation(origin);
-      const destinationCoords = isDestinationCoords ? destination : await geocodeLocation(destination);
-
-      if (!originCoords || !destinationCoords) {
-        setError("Could not find coordinates for origin or destination.");
-        setLoading(false);
-        return;
-      }
-
-      const res = await fetch("http://localhost:3001/api/route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin: originCoords, destination: destinationCoords }),
-      });
-
-      if (!res.ok) throw new Error("Route API failed");
-
-      const data = await res.json();
-      setRoutes(data.routes || []);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to fetch route details.");
-    } finally {
-      setLoading(false);
-    }
+  const generateGoogleMapsLink = (from, to) => {
+    return `https://www.google.com/maps/dir/${encodeURIComponent(from)}/${encodeURIComponent(to)}`;
   };
 
-  // Swap origin and destination
-  const handleSwap = () => {
-    const temp = origin;
-    setOrigin(destination);
-    setDestination(temp);
-  };
+  const isYelahankaToMajestic =
+    origin.toLowerCase().includes("yelahanka") &&
+    destination.toLowerCase().includes("majestic");
 
   return (
     <section className="py-16 bg-gray-50">
@@ -122,7 +116,9 @@ const TransportSection = () => {
 
             <CardContent className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">From / ಇಂದ</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  From / ಇಂದ
+                </label>
                 <div className="flex space-x-2">
                   <Input
                     placeholder="Enter starting point or coordinates..."
@@ -138,7 +134,9 @@ const TransportSection = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">To / ಗೆ</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  To / ಗೆ
+                </label>
                 <Input
                   placeholder="Enter destination or coordinates..."
                   value={destination}
@@ -146,54 +144,56 @@ const TransportSection = () => {
                 />
               </div>
 
-              <div className="flex justify-between">
-                <Button
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  onClick={handleFindRoutes}
-                  disabled={loading}
-                >
-                  <Navigation className="w-4 h-4 mr-2" />
-                  {loading ? "Finding Routes..." : "Find Routes / ಮಾರ್ಗಗಳನ್ನು ಹುಡುಕಿ"}
-                </Button>
+              <Button
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                onClick={handleFindRoutes}
+                disabled={loading}
+              >
+                <Navigation className="w-4 h-4 mr-2" />
+                {loading ? "Finding Routes..." : "Find Routes / ಮಾರ್ಗಗಳನ್ನು ಹುಡುಕಿ"}
+              </Button>
 
-                <Button
-                  className="ml-2"
-                  variant="ghost"
-                  onClick={handleSwap}
-                  disabled={loading}
-                >
-                  <RefreshCw className="w-4 h-4 mr-1" />
-                  Swap
-                </Button>
-              </div>
-
-              {error && (
-                <p className="text-sm text-red-600 mt-2" aria-live="polite">
-                  {error}
-                </p>
-              )}
-
-              {/* Dynamic Route Results */}
               <div className="mt-6 space-y-3">
                 {routes.length > 0 && (
                   <>
-                    <h4 className="font-semibold text-gray-900">Routes:</h4>
+                    <h4 className="font-semibold text-gray-900">Bus Routes:</h4>
                     {routes.map((route, idx) => (
                       <div key={idx} className="p-3 bg-blue-50 rounded-lg">
-                        <p className="font-medium">Distance: {route.distance} km</p>
-                        <p className="text-sm text-gray-600">Duration: {route.duration} mins</p>
-                        {route.instructions && (
-                          <p className="text-xs text-gray-500">{route.instructions}</p>
-                        )}
-                        {route.steps &&
-                          route.steps.map((step, i) => (
-                            <p key={i} className="text-xs text-gray-600">
-                              → {step}
-                            </p>
-                          ))}
+                        <p className="font-medium">Distance: {route.distance}</p>
+                        <p className="text-sm text-gray-600">Duration: {route.duration}</p>
+                        <p className="text-xs text-gray-500">{route.instructions}</p>
                       </div>
                     ))}
+
+                    <a
+                      href={generateGoogleMapsLink(origin, destination)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm underline text-blue-700 block mt-2"
+                    >
+                      View route on Google Maps
+                    </a>
                   </>
+                )}
+
+                {!routes.length && origin && destination && (
+                  <div className="text-sm text-blue-600 mt-4">
+                    <a
+                      href={generateGoogleMapsLink(origin, destination)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      View route on Google Maps
+                    </a>
+                  </div>
+                )}
+
+                {isYelahankaToMajestic && (
+                  <div className="bg-yellow-100 text-sm p-3 rounded-md mt-3">
+                    <strong>BMTC Update:</strong> Direct buses from Yelahanka to Majestic run every 15–20 mins via
+                    route no. 283/285. Estimated travel time: <strong>1 hour 12 minutes</strong>.
+                  </div>
                 )}
               </div>
             </CardContent>

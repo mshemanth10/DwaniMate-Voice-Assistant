@@ -3,39 +3,55 @@ from flask_cors import CORS
 import os
 import dwani
 import requests
+import google.generativeai as genai
 
-# Configure Dwani API keys
+# Configure keys
 dwani.api_key = os.getenv("DWANI_API_KEY")
 dwani.api_base = os.getenv("DWANI_API_BASE_URL")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-pro")
 
 app = Flask(__name__)
 CORS(app)
 
+# ----------------------------------
+# CHAT + VOICE (general use)
+# ----------------------------------
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     prompt = request.json.get("message", "")
     try:
-        # Chat API: translate or respond in Kannada
-        response = dwani.Chat.create(prompt=prompt+"if it is not related government services, transport routes, or schemes dont respond", src_lang="eng_Latn", tgt_lang="kan_Knda")
-        reply_text = response.get("response", "No response")
+        response = dwani.Chat.create(
+            prompt=prompt + " (Only respond if it's about government services, education, transportation, or schemes. Reply in Kannada only.)",
+            src_lang="eng_Latn",
+            tgt_lang="kan_Knda"
+        )
+        reply_text = response.get("response", "ಯಾವುದೇ ಉತ್ತರ ಲಭ್ಯವಿಲ್ಲ.")
 
-        # Generate speech audio from the Kannada reply text
         audio_bytes = dwani.Audio.speech(input=reply_text, response_format="mp3")
-        audio_path = "output.mp3"
-        with open(audio_path, "wb") as f:
+        with open("output.mp3", "wb") as f:
             f.write(audio_bytes)
 
         return jsonify({"reply": reply_text, "audioUrl": "http://localhost:3001/api/audio"})
+
     except Exception as e:
         return jsonify({"reply": f"Error: {str(e)}"}), 500
+
 
 @app.route("/api/audio", methods=["GET"])
 def get_audio():
     return send_file("output.mp3", mimetype="audio/mpeg")
 
+
+# ----------------------------------
+# ROUTE USING GEMINI + DWANI
+# ----------------------------------
 @app.route("/api/route", methods=["POST"])
-def get_route():
+def get_bus_route_with_ai():
     data = request.json
     origin = data.get("origin")
     destination = data.get("destination")
@@ -43,61 +59,26 @@ def get_route():
     if not origin or not destination:
         return jsonify({"error": "Origin and destination are required"}), 400
 
-    # Google Maps Directions API endpoint
-    endpoint = "https://maps.googleapis.com/maps/api/directions/json"
+    # Prompt for Gemini in Kannada
+    gemini_prompt = f"From '{origin}' to '{destination}', provide Karnataka bus numbers and timings. Respond only in Kannada."
 
-    params = {
-        "origin": origin,
-        "destination": destination,
-        "mode": "transit",           # use transit mode to get bus info
-        "transit_mode": "bus",       # limit to bus only
-        "key": GOOGLE_MAPS_API_KEY,
-        "language": "kn"             # Kannada language if needed
-    }
+    try:
+        gemini_response = gemini_model.generate_content(gemini_prompt)
+        reply_text = gemini_response.text.strip()
 
-    response = requests.get(endpoint, params=params)
-    if response.status_code != 200:
-        return jsonify({"error": "Failed to get data from Google Maps"}), 500
+        # Generate speech from Gemini response
+        audio_bytes = dwani.Audio.speech(input=reply_text, response_format="mp3")
+        with open("output.mp3", "wb") as f:
+            f.write(audio_bytes)
 
-    data = response.json()
+        return jsonify({
+            "reply": reply_text,
+            "audioUrl": "http://localhost:3001/api/audio"
+        })
 
-    # Extract useful info from Google response
-    routes = []
-    for route in data.get("routes", []):
-        legs = route.get("legs", [])
-        for leg in legs:
-            steps = leg.get("steps", [])
-            bus_steps = []
-            for step in steps:
-                travel_mode = step.get("travel_mode", "")
-                if travel_mode == "TRANSIT":
-                    transit_details = step.get("transit_details", {})
-                    bus_line = transit_details.get("line", {})
-                    bus_number = bus_line.get("short_name", "N/A")
-                    arrival_stop = transit_details.get("arrival_stop", {}).get("name", "")
-                    departure_stop = transit_details.get("departure_stop", {}).get("name", "")
-                    arrival_time = transit_details.get("arrival_time", {}).get("text", "")
-                    departure_time = transit_details.get("departure_time", {}).get("text", "")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-                    bus_steps.append({
-                        "bus_number": bus_number,
-                        "arrival_stop": arrival_stop,
-                        "departure_stop": departure_stop,
-                        "arrival_time": arrival_time,
-                        "departure_time": departure_time,
-                        "instructions": step.get("html_instructions", ""),
-                        "duration": step.get("duration", {}).get("text", ""),
-                        "num_stops": transit_details.get("num_stops", 0)
-                    })
-
-            routes.append({
-                "summary": route.get("summary", ""),
-                "bus_steps": bus_steps,
-                "distance": leg.get("distance", {}).get("text", ""),
-                "duration": leg.get("duration", {}).get("text", "")
-            })
-
-    return jsonify({"routes": routes})
 
 if __name__ == "__main__":
     app.run(port=3001, debug=True)
