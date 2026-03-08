@@ -1,4 +1,4 @@
-# DwaniMate - ದ್ವನಿಮಿತ್ರ
+# DwaniMate
 
 DwaniMate is a bilingual AI-powered voice assistant designed to help users in Karnataka access government services, transport routes, and public schemes using conversational AI in Kannada and English.
 
